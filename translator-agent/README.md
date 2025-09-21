@@ -1,4 +1,4 @@
-# news-read-agent
+# translator-agent
 
 프로젝트 개요
 - 이 저장소는 CrewAI 기반의 간단한 번역 에이전트(Crew) 예제를 포함합니다.
@@ -13,7 +13,7 @@
 
 프로젝트 구조
 ```
-news-read-agent/
+translator-agent/
 ├─ main.py                 # Crew/Agent/Task 선언 및 실행 진입점
 ├─ pyproject.toml          # 프로젝트 메타데이터 및 의존성
 ├─ uv.lock                 # uv 잠금 파일
@@ -73,11 +73,10 @@ TranslaterCrew().assemble_crew().kickoff(inputs={"sentence": "Hello, how are you
 - 스크립트 항목([project.scripts])은 정의되어 있지 않으므로, 현재는 main.py 직접 실행 방식입니다.
 
 테스트/품질 도구
-- 이 저장소에는 테스트/린트 설정 파일이 포함되어 있지 않습니다(확실하지 않음). 필요 시 pytest/ruff/black 등을 추가하세요.
 
 주의 사항
-- .aiignore에 명시된 패턴(.DS_Store, *.log, *.tmp, dist/, build/, out/)은 이 도구의 분석/검색 단계에서 제외합니다.
+- .aiignore에 명시된 패턴은 이 도구의 분석/검색 단계에서 제외합니다.
 - 민감정보가 포함된 환경 변수는 .env로 관리하고, 커밋되지 않도록 .gitignore를 유지하세요.
 
 라이선스
-- 라이선스 정보가 명시되어 있지 않습니다(확실하지 않음). 필요 시 LICENSE 파일을 추가하세요.
+- MIT License
