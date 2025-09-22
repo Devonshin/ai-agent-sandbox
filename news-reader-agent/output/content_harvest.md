@@ -1,0 +1,1 @@
+The comprehensive news articles collection regarding 프랑스 정치, 경제 has been formatted as specified.
