@@ -10,7 +10,6 @@ dependencies = [
     "python-dotenv>=1.1.1",
     "streamlit>=1.48.0",
 ]
-
 [dependency-groups]
 dev = [
     "ipykernel>=6.30.1",
