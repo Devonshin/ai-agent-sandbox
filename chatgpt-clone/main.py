@@ -6,7 +6,8 @@ dotenv.load_dotenv()
 import time
 import asyncio
 import streamlit as st
-from agents import Agent, Runner, SQLiteSession, WebSearchTool, FileSearchTool, ImageGenerationTool
+from agents import (Agent, Runner, SQLiteSession, WebSearchTool, FileSearchTool, ImageGenerationTool,
+                    CodeInterpreterTool, HostedMCPTool)
 from openai import OpenAI
 
 client = OpenAI()
@@ -22,6 +23,7 @@ if "agent" not in st.session_state:
             - Web Search Tool: 사용자가 학습 데이터에 없는 질문을 할 때 이 도구를 사용하세요. 사용자가 현재 또는 미래의 이벤트에 대해 질문할 때 이 도구를 사용하여 답을 모른다고 생각되면 먼저 웹에서 검색해 보세요.
             - File Search Tool: 사용자가 자신과 관련된 사실에 대해 질문할 때 이 도구를 사용합니다. 또는 특정 파일에 대해 질문할 때 사용합니다.
             - Image generation tool: 사용자가 이미지 생성을 요청할 때 이 도구를 사용합니다.
+            - Code Interpreter tool: 코드 실행이 필요할 때 이 도구를 사용합니다. 
         """,
         tools=[
             WebSearchTool(),
@@ -30,12 +32,29 @@ if "agent" not in st.session_state:
                 max_num_results=3
             ),
             ImageGenerationTool(
-                tool_config= {
-                    "type" : "image_generation",
+                tool_config={
+                    "type": "image_generation",
                     "quality": "medium",
                     "size": "1024x1024",
                     "output_format": "jpeg",
                     "partial_images": 3
+                }
+            ),
+            CodeInterpreterTool(
+                tool_config={
+                    "type": "code_interpreter",
+                    "container": {
+                        "type": "auto"
+                    }
+                }
+            ),
+            HostedMCPTool(
+                tool_config={
+                    "server_url": "https://mcp.context7.com/mcp",
+                    "server_label": "Context7",
+                    "type": "mcp",
+                    "server_description": "Use this to get the docs from software projects.",
+                    "require_approval": "never",
                 }
             )
         ],
@@ -79,36 +98,37 @@ async def paint_history():
                 image = base64.b64decode(message["result"])
                 with st.chat_message("ai"):
                     st.image(image)
+            elif message_type == "code_interpreter_call":
+                with st.chat_message("ai"):
+                    st.code(message["code"])
+            elif message_type == "mcp_list_tools":
+                with st.chat_message("ai"):
+                    st.write(f"Listed {message['server_label']}'s tools...")
+            elif message_type == "mcp_call":
+                with st.chat_message("ai"):
+                    st.write(f"Called {message['server_label']}'s {message['name']} with args {message['arguments']}")
 
 
 def update_status(status_container, event):
     status_messages = {
         "response.web_search_call.completed": ("✅ Web search completed.", "complete"),
-        "response.web_search_call.in_progress": (
-            "🔍 Starting web search...",
-            "running",
-        ),
-        "response.web_search_call.searching": (
-            "🔍 Web search in progress...",
-            "running",
-        ),
+        "response.web_search_call.in_progress": ("🔍 Starting web search...","running",),
+        "response.web_search_call.searching": ("🔍 Web search in progress...","running",),
         "response.file_search_call.completed": ("✅ File search completed.", "complete"),
-        "response.file_search_call.in_progress": (
-            "🔍 Starting File search...",
-            "running",
-        ),
-        "response.file_search_call.searching": (
-            "🔍 File search in progress...",
-            "running",
-        ),
-        "response.image_generation_call.generating": (
-            "🎨 Drawing image...",
-            "running",
-        ),
-        "response.image_generation_call.in_progress": (
-            "🎨 Drawing image...",
-            "running",
-        ),
+        "response.file_search_call.in_progress": ("🔍 Starting File search...","running",),
+        "response.file_search_call.searching": ("🔍 File search in progress...","running",),
+        "response.image_generation_call.generating": ("🎨 Drawing image...","running",),
+        "response.image_generation_call.in_progress": ("🎨 Drawing image...","running",),
+        "response.code_interpreter_call_code.done": ("🤖 Ran code.", "complete"),
+        "response.code_interpreter_call.completed": ("🤖 Ran code.", "complete"),
+        "response.code_interpreter_call.in_progress": ("🤖 Running code...","complete",),
+        "response.code_interpreter_call.interpreting": ("🤖 Running code...","complete",),
+        "response.mcp_call.completed": ("⚒️ Called MCP tool", "complete",),
+        "response.mcp_call.failed": ("⚒️ Error calling MCP tool", "complete",),
+        "response.mcp_call.in_progress": ("⚒️ Calling MCP tool...", "running",),
+        "response.mcp_list_tools.completed": ("⚒️ Listed MCP tools", "complete",),
+        "response.mcp_list_tools.failed": ("⚒️ Error listing MCP tools", "complete",),
+        "response.mcp_list_tools.in_progress": ("⚒️ Listing MCP tools", "running",),
         "response.completed": (" ", "complete"),
     }
 
@@ -123,9 +143,16 @@ asyncio.run(paint_history())
 async def run_agent(message):
     with st.chat_message("ai"):
         status_container = st.status("⏳", expanded=False)
-        text_placeholder = st.empty()
+        code_placeholder = st.empty()
         image_placeholder = st.empty()
+        text_placeholder = st.empty()
         response = ""
+        code_response = ""
+
+        # 세션에 저장해서 새로운 유저 인풋이 있을 경우에 삭제한다.
+        st.session_state["code_placeholder"] = code_placeholder
+        st.session_state["image_placeholder"] = image_placeholder
+        st.session_state["text_placeholder"] = text_placeholder
 
         stream = Runner.run_streamed(
             agent,
@@ -138,12 +165,13 @@ async def run_agent(message):
                 update_status(status_container, event.data.type)
                 if event.data.type == "response.output_text.delta":
                     response += event.data.delta
-                    text_placeholder.write(response.replace("$", "\$"))
+                    text_placeholder.write(response.replace("$", "\\$"))
                 elif event.data.type == "response.image_generation_call.partial_image":
                     image = base64.b64decode(event.data.partial_image_b64)
                     image_placeholder.image(image)
-                elif event.data.type == "response.complete":
-                    image_placeholder.empty()
+                elif event.data.type == "response.code_interpreter_call_code.delta":
+                    code_response += event.data.delta
+                    code_placeholder.code(code_response)
 
 
 prompt = st.chat_input(
@@ -153,6 +181,14 @@ prompt = st.chat_input(
 )
 
 if prompt:
+
+    if "code_placeholder" in st.session_state:
+        st.session_state["code_placeholder"].empty()
+    if "image_placeholder" in st.session_state:
+        st.session_state["image_placeholder"].empty()
+    if "text_placeholder" in st.session_state:
+        st.session_state["text_placeholder"].empty()
+
     # 파일을 먼저 로드 시킨다
     for file in prompt.files:
         if file.type.startswith("text/"):
